@@ -1,3 +1,5 @@
+import html
+
 import openai
 import streamlit as st
 
@@ -6,6 +8,7 @@ from translator import (
     MAX_CHARS,
     get_api_key,
     get_model,
+    pronounce,
     secrets_problem,
     translate,
 )
@@ -24,6 +27,8 @@ MESSAGES = {
     "timeout": "응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.",
     "connection": "네트워크 연결에 실패했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
     "unknown": "번역 중 오류가 발생했습니다: {error}",
+    "pron_loading": "발음을 불러오는 중입니다...",
+    "pron_failed": "발음을 불러오지 못했습니다.",
 }
 
 # PRD 9장 화면 구성의 탭 라벨
@@ -63,6 +68,11 @@ h1 { word-break: keep-all; }
     word-break: break-word;
 }
 [data-testid="stCode"] pre { padding: 1rem 3rem 1rem 1.1rem !important; }
+
+/* 번역문 아래 한글 발음: 작고 흐리게, 줄바꿈 유지 */
+.pronunciation { display: flex; gap: 0.5rem; font-size: 0.9rem; line-height: 1.7; opacity: 0.7; margin: -0.5rem 0 0.5rem 0.25rem; }
+.pronunciation-label { font-weight: 600; flex-shrink: 0; }
+.pronunciation-text { white-space: pre-wrap; }
 </style>
 """
 
@@ -81,9 +91,13 @@ def error_message(e: Exception) -> str:
     return MESSAGES["unknown"].format(error=e)
 
 
-def build_download_text(source: str, result: dict) -> str:
+def build_download_text(source: str, result: dict, pronunciation: dict | None = None) -> str:
     sections = [f"[원문]\n{source}"]
-    sections += [f"[{LANGUAGE_LABELS[code]}]\n{text}" for code, text in result.items()]
+    for code, text in result.items():
+        section = f"[{LANGUAGE_LABELS[code]}]\n{text}"
+        if pronunciation:
+            section += f"\n(발음) {pronunciation[code]}"
+        sections.append(section)
     return "\n\n".join(sections) + "\n"
 
 
@@ -142,16 +156,34 @@ if st.button("🔄 번역하기", type="primary", width="stretch", disabled=not 
 st.subheader("번역 결과")
 translation = st.session_state.get("translation")
 if translation:
+    pronunciation = translation.get("pronunciation")
     codes = list(translation["result"])
     for tab, code in zip(st.tabs([TAB_LABELS[c] for c in codes]), codes):
         with tab:
             st.code(translation["result"][code], language=None, wrap_lines=True)
+            if pronunciation:
+                body = html.escape(pronunciation[code])
+            else:
+                body = MESSAGES["pron_failed" if translation.get("pronunciation_failed") else "pron_loading"]
+            st.markdown(
+                '<div class="pronunciation"><span class="pronunciation-label">발음</span>'
+                f'<span class="pronunciation-text">{body}</span></div>',
+                unsafe_allow_html=True,
+            )
     st.download_button(
         "⬇ 전체 결과 다운로드",
-        data=build_download_text(translation["source"], translation["result"]),
+        data=build_download_text(translation["source"], translation["result"], pronunciation),
         file_name="translation.txt",
         mime="text/plain",
         width="stretch",
     )
+
+    # 번역 결과를 먼저 보여준 뒤 발음을 불러오고, 다 받으면 다시 그려 발음과 다운로드 파일에 반영한다.
+    if pronunciation is None and not translation.get("pronunciation_failed"):
+        try:
+            translation["pronunciation"] = pronounce(translation["result"])
+        except Exception:
+            translation["pronunciation_failed"] = True
+        st.rerun()
 else:
     st.info("번역 결과가 여기에 표시됩니다")
