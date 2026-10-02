@@ -1,0 +1,13 @@
+# 배경/글자 색은 지정하지 않고 강조색만 라이트·다크 테마별로 지정한다.
+# ([theme]에 바로 색을 지정하면 다크 모드 자동 전환이 꺼진다.)
+[theme.light]
+primaryColor = "#4F6BED"
+
+[theme.dark]
+primaryColor = "#7B91F5"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
